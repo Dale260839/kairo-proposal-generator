@@ -198,3 +198,4 @@ An internet connection is required so the browser can load these CDN scripts.
 
 - `index.html` — the entire app.
 - `README.md` — this file.
+
