@@ -371,6 +371,73 @@
     .toolbar { flex-direction: column; align-items: stretch; }
     .toolbar-group { justify-content: flex-start; }
   }
+
+  /* === Send-to-Email modal === */
+  .modal {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  /* Global .hidden { display:none !important } already hides .modal.hidden */
+
+  .modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(10, 31, 68, 0.55);
+    backdrop-filter: blur(2px);
+  }
+
+  .modal-card {
+    position: relative;
+    width: 100%; max-width: 540px; max-height: 90vh;
+    display: flex; flex-direction: column;
+    background: #fff;
+    border-radius: var(--radius, 12px);
+    box-shadow: var(--shadow, 0 20px 60px rgba(0,0,0,0.25));
+    overflow: hidden;
+  }
+
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.25rem;
+    background: var(--navy, #0A1F44);
+    color: #fff;
+  }
+  .modal-header h2 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+  .modal-close {
+    background: transparent; border: 0; color: #fff;
+    font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 0 0.25rem;
+  }
+
+  .modal-body { padding: 1.25rem; overflow-y: auto; }
+  .modal-footer {
+    display: flex; gap: 0.5rem; justify-content: flex-end;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .modal .field { display: block; margin-bottom: 1rem; }
+  .modal .field-label {
+    display: block; font-size: 0.875rem; font-weight: 600;
+    margin-bottom: 0.375rem; color: #111;
+  }
+  .modal .field-sub { font-weight: 400; color: #6b7280; }
+  .modal .field .req { color: #c0392b; }
+  .modal .field input, .modal .field textarea {
+    width: 100%; padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db; border-radius: 6px;
+    font: inherit; background: #fff; color: #111;
+    box-sizing: border-box;
+  }
+  .modal .field input:focus, .modal .field textarea:focus {
+    outline: 2px solid var(--gold, #E0A82E);
+    outline-offset: 1px;
+    border-color: var(--navy, #0A1F44);
+    box-shadow: none;
+  }
+  .modal .field-hint { font-size: 0.8125rem; color: #6b7280; margin: 0.5rem 0 0; }
+  .modal .field-hint code {
+    background: #f3f4f6; padding: 0.125rem 0.375rem; border-radius: 4px;
+  }
 </style>
 </head>
 <body>
@@ -494,6 +561,10 @@
         </div>
         <button type="button" class="btn btn-gold" id="btn-download">⬇ Download</button>
         <button type="button" class="btn btn-outline" id="btn-copy">⧉ Copy</button>
+        <button type="button" class="btn btn-navy" id="btn-send-email">
+          <span class="btn-icon" aria-hidden="true">✉️</span>
+          Send to Email
+        </button>
       </div>
 
       <div class="toolbar-group">
@@ -508,17 +579,52 @@
 
 <div id="toast" class="toast"></div>
 
+<!-- Send-to-Email modal -->
+<div id="email-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="email-modal-title">
+  <div class="modal-backdrop" data-modal-close></div>
+  <div class="modal-card" role="document">
+    <header class="modal-header">
+      <h2 id="email-modal-title">Send Proposal</h2>
+      <button class="modal-close" data-modal-close aria-label="Close">×</button>
+    </header>
+
+    <div class="modal-body">
+      <label class="field">
+        <span class="field-label">Client email <span class="req" aria-hidden="true">*</span></span>
+        <input type="email" id="email-to" autocomplete="email" required placeholder="client@example.com">
+      </label>
+
+      <label class="field">
+        <span class="field-label">Subject</span>
+        <input type="text" id="email-subject" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Cover note <span class="field-sub">(shown in the email body)</span></span>
+        <textarea id="email-cover-note" rows="6"></textarea>
+      </label>
+
+      <p class="field-hint">
+        The proposal will be attached as <code id="email-attachment-name">proposal.pdf</code> and the email will appear in the client's GHL Conversations thread.
+      </p>
+    </div>
+
+    <footer class="modal-footer">
+      <button class="btn btn-outline" data-modal-close type="button">Cancel</button>
+      <button class="btn btn-gold" id="email-modal-send" type="button">Send</button>
+    </footer>
+  </div>
+</div>
+
 <script>
 /* =================================================================
-   CONFIG  — EDIT THESE TWO VALUES
+   CONFIG  — EDIT THIS ONE VALUE
    -----------------------------------------------------------------
-   NOTE: The API key below is shipped to the browser and is therefore
-   VISIBLE to anyone who opens this page or its dev tools. Keep this
-   page BEHIND A LOGIN (e.g. a GoHighLevel membership area) and rotate
-   the key if it leaks. This is a client-side-only app by design.
+   No secret key lives in the browser. The backend decides what's a
+   legit request by checking the Origin of this page (and rate-limiting),
+   so there is nothing here to leak. Just point API_URL at your endpoint.
    ================================================================= */
 const API_URL = "https://kairo-output-production.up.railway.app/generate";
-const API_KEY = "PASTE_ROTATED_SECRET_HERE";  // sent as the x-api-key header
 /* ================================================================= */
 
 
@@ -602,7 +708,6 @@ async function generate(payload) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
       },
       body: JSON.stringify(payload),
     });
@@ -760,7 +865,9 @@ els.form.addEventListener("submit", (e) => {
   e.preventDefault();
   els.formError.classList.add("hidden");
   if (!els.form.reportValidity()) return;
-  generate(readForm());
+  const job = readForm();
+  window.lastJob = job; // exposes form values to the Send-to-Email modal
+  generate(job);
 });
 
 els.formErrorRetry.addEventListener("click", () => {
@@ -782,6 +889,174 @@ els.btnRegen.addEventListener("click", () => {
 els.btnNew.addEventListener("click", () => {
   showState("form");
 });
+
+
+// =====================================================================
+// Send-to-Email feature
+// =====================================================================
+
+// The existing API_URL already ends in "/generate"; derive the sibling
+// "/send-email" endpoint from the same base.
+const SEND_EMAIL_URL = API_URL.replace(/\/generate\/?$/, "/send-email");
+
+const emailEls = {
+  btn:        document.getElementById("btn-send-email"),
+  modal:      document.getElementById("email-modal"),
+  to:         document.getElementById("email-to"),
+  subject:    document.getElementById("email-subject"),
+  coverNote:  document.getElementById("email-cover-note"),
+  attachName: document.getElementById("email-attachment-name"),
+  sendBtn:    document.getElementById("email-modal-send"),
+};
+
+function openEmailModal() {
+  const job = window.lastJob || lastPayload || {};
+  const trade = (job.trade || "Proposal").trim();
+  const clientName = (job.clientName || "").trim();
+  const firstName = clientName.split(/\s+/)[0] || "";
+
+  emailEls.subject.value = clientName
+    ? `${trade} Proposal for ${clientName}`
+    : `${trade} Proposal`;
+
+  emailEls.coverNote.value =
+`Hi${firstName ? ` ${firstName}` : ""},
+
+Thanks for the chance to put this together. Please find the ${trade.toLowerCase()} proposal attached for your review — happy to walk through any of it on a quick call.
+
+Looking forward to working with you.`;
+
+  const safeName = (clientName || "Proposal")
+    .replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-") || "proposal";
+  emailEls.attachName.textContent = `${safeName}-proposal.pdf`;
+
+  emailEls.to.value = "";
+  emailEls.modal.classList.remove("hidden");
+  setTimeout(() => emailEls.to.focus(), 50);
+}
+
+function closeEmailModal() {
+  emailEls.modal.classList.add("hidden");
+}
+
+emailEls.btn.addEventListener("click", openEmailModal);
+emailEls.modal.addEventListener("click", (e) => {
+  if (e.target.matches("[data-modal-close]")) closeEmailModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !emailEls.modal.classList.contains("hidden")) {
+    closeEmailModal();
+  }
+});
+
+function buildPdfNode() {
+  const preview = els.preview; // the rendered-markdown preview (#preview)
+  if (!preview) throw new Error("Preview element not found");
+  const wrap = document.createElement("div");
+  wrap.style.padding = "24px";
+  wrap.style.fontFamily = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  wrap.style.color = "#111";
+  wrap.style.background = "#fff";
+  wrap.style.maxWidth = "780px";
+  wrap.innerHTML = preview.innerHTML;
+  return wrap;
+}
+
+async function renderPdfBlob() {
+  const node = buildPdfNode();
+  const opt = {
+    margin:      [12, 12, 12, 12],
+    filename:    "proposal.pdf",
+    image:       { type: "jpeg", quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+    jsPDF:       { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak:   { mode: ["css", "legacy"] },
+  };
+  return await html2pdf().set(opt).from(node).outputPdf("blob");
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = String(r.result || "");
+      const comma = s.indexOf(",");
+      resolve(comma === -1 ? s : s.slice(comma + 1));
+    };
+    r.onerror = () => reject(r.error || new Error("FileReader failed"));
+    r.readAsDataURL(blob);
+  });
+}
+
+function coverNoteToHtml(text) {
+  const escape = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const paragraphs = escape(text || "")
+    .split(/\n{2,}/)
+    .map((p) => `<p style="margin:0 0 12px;">${p.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;line-height:1.5;max-width:640px;">${paragraphs}</div>`;
+}
+
+async function handleSendEmail() {
+  const to = emailEls.to.value.trim();
+  const subject = emailEls.subject.value.trim();
+  const coverNote = emailEls.coverNote.value;
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    toast("Please enter a valid email address.");
+    emailEls.to.focus();
+    return;
+  }
+  if (!subject) {
+    toast("Subject is required.");
+    emailEls.subject.focus();
+    return;
+  }
+
+  emailEls.sendBtn.disabled = true;
+  const originalLabel = emailEls.sendBtn.textContent;
+  emailEls.sendBtn.textContent = "Generating PDF…";
+
+  try {
+    const pdfBlob = await renderPdfBlob();
+    if (pdfBlob.size > 5 * 1024 * 1024) {
+      throw new Error("PDF is larger than 5 MB — try shortening the proposal.");
+    }
+    const pdfBase64 = await blobToBase64(pdfBlob);
+
+    emailEls.sendBtn.textContent = "Sending…";
+    const job = window.lastJob || lastPayload || {};
+    const res = await fetch(SEND_EMAIL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientName:    (job.clientName || "").trim(),
+        clientEmail:   to,
+        subject,
+        coverNoteHtml: coverNoteToHtml(coverNote),
+        pdfBase64,
+        pdfFilename:   emailEls.attachName.textContent || "proposal.pdf",
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server responded ${res.status}`);
+    }
+    await res.json().catch(() => ({}));
+    toast(`Sent to ${to} ✓`);
+    closeEmailModal();
+  } catch (err) {
+    console.error("[send-email]", err);
+    toast(err.message || "Failed to send email.");
+  } finally {
+    emailEls.sendBtn.disabled = false;
+    emailEls.sendBtn.textContent = originalLabel;
+  }
+}
+
+emailEls.sendBtn.addEventListener("click", handleSendEmail);
 </script>
 </body>
 </html>
